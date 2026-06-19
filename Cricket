@@ -1,0 +1,181 @@
+import { useState } from "react";
+
+export default function CricketScorer() {
+  const ballsPerOver = 6;
+  const totalOvers = 20;
+  const maxBalls = totalOvers * ballsPerOver;
+
+  const oversPerPair = 4;
+  const ballsPerPair = oversPerPair * ballsPerOver;
+
+  const [teamAName, setTeamAName] = useState("");
+  const [teamBName, setTeamBName] = useState("");
+
+  const [teamAPlayers, setTeamAPlayers] = useState("");
+  const [teamBPlayers, setTeamBPlayers] = useState("");
+
+  const [teamA, setTeamA] = useState({ score: 0, wickets: 0 });
+  const [teamB, setTeamB] = useState({ score: 0, wickets: 0 });
+
+  const [teamAPairStats, setTeamAPairStats] = useState([]);
+  const [teamBPairStats, setTeamBPairStats] = useState([]);
+
+  const [currentTeam, setCurrentTeam] = useState("A");
+  const [balls, setBalls] = useState(0);
+
+  const [history, setHistory] = useState([]);
+  const [ballLog, setBallLog] = useState([]);
+
+  const parsePairs = (players) => {
+    const list = players.split(",").map(p => p.trim()).filter(Boolean);
+    const pairs = [];
+    for (let i = 0; i < list.length; i += 2) {
+      pairs.push([list[i], list[i + 1] || "-"]);
+    }
+    return pairs;
+  };
+
+  const teamAPairs = parsePairs(teamAPlayers);
+  const teamBPairs = parsePairs(teamBPlayers);
+  const activePairs = currentTeam === "A" ? teamAPairs : teamBPairs;
+
+  const pairIndex = Math.floor(balls / ballsPerPair);
+  const currentPair = activePairs[pairIndex] || ["-", "-"];
+
+  const inningsComplete = pairIndex >= activePairs.length || balls >= maxBalls;
+
+  const active = currentTeam === "A" ? teamA : teamB;
+  const setActive = currentTeam === "A" ? setTeamA : setTeamB;
+  const setStats = currentTeam === "A" ? setTeamAPairStats : setTeamBPairStats;
+  const statsArr = currentTeam === "A" ? teamAPairStats : teamBPairStats;
+
+  const saveState = () => {
+    setHistory(h => [...h, { teamA, teamB, teamAPairStats, teamBPairStats, balls, ballLog }]);
+  };
+
+  const undo = () => {
+    if (history.length === 0) return;
+    const prev = history[history.length - 1];
+    setTeamA(prev.teamA);
+    setTeamB(prev.teamB);
+    setTeamAPairStats(prev.teamAPairStats);
+    setTeamBPairStats(prev.teamBPairStats);
+    setBalls(prev.balls);
+    setBallLog(prev.ballLog);
+    setHistory(h => h.slice(0, -1));
+  };
+
+  const recordBall = (label) => {
+    setBallLog(log => [...log, `${Math.floor(balls/6)}.${balls%6} - ${label}`]);
+  };
+
+  const updateStats = (runs, isWicket=false) => {
+    setStats(prev => {
+      const updated = [...prev];
+      if (!updated[pairIndex]) updated[pairIndex] = { runs:0, wickets:0 };
+      updated[pairIndex].runs += runs;
+      if (isWicket) updated[pairIndex].wickets++;
+      return updated;
+    });
+  };
+
+  const nextBall = () => setBalls(b => Math.min(b+1, maxBalls));
+
+  const addRuns = (r) => {
+    if (inningsComplete) return;
+    saveState();
+    setActive(p => ({ ...p, score:p.score + r }));
+    updateStats(r);
+    recordBall(`+${r}`);
+    nextBall();
+  };
+
+  const wide = () => {
+    if (inningsComplete) return;
+    saveState();
+    setActive(p => ({ ...p, score:p.score + 2 }));
+    updateStats(2);
+    recordBall("Wide +2");
+    nextBall();
+  };
+
+  const wicket = () => {
+    if (inningsComplete) return;
+    saveState();
+    setActive(p => ({ ...p, wickets:p.wickets + 1, score:p.score -5 }));
+    updateStats(-5, true);
+    recordBall("Wicket -5");
+    nextBall();
+  };
+
+  const nextInnings = () => { setBalls(0); setBallLog([]); setCurrentTeam(t => t === "A" ? "B" : "A"); };
+
+  const exportMatch = () => {
+    const pairsA = teamAPairs.map((pair,i)=>{
+      const s = teamAPairStats[i] || {runs:0,wickets:0};
+      return `Pair ${i+1}: ${pair[0]} & ${pair[1]} - ${s.runs}/${s.wickets}`;
+    }).join("\n");
+
+    const pairsB = teamBPairs.map((pair,i)=>{
+      const s = teamBPairStats[i] || {runs:0,wickets:0};
+      return `Pair ${i+1}: ${pair[0]} & ${pair[1]} - ${s.runs}/${s.wickets}`;
+    }).join("\n");
+
+    const text = `FULL SCORECARD\n\n${teamAName||'Team A'}: ${teamA.score}\n${pairsA}\n\n${teamBName||'Team B'}: ${teamB.score}\n${pairsB}`;
+
+    const blob = new Blob([text], {type:"text/plain"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "scorecard.txt";
+    a.click();
+  };
+
+  const overs = `${Math.floor(balls/6)}.${balls%6}`;
+
+  return (
+    <div className="p-3 max-w-md mx-auto space-y-3">
+      <input className="w-full border p-2" placeholder="Team A" value={teamAName} onChange={e=>setTeamAName(e.target.value)} />
+      <textarea className="w-full border p-2" placeholder="Team A players" value={teamAPlayers} onChange={e=>setTeamAPlayers(e.target.value)} />
+
+      <input className="w-full border p-2" placeholder="Team B" value={teamBName} onChange={e=>setTeamBName(e.target.value)} />
+      <textarea className="w-full border p-2" placeholder="Team B players" value={teamBPlayers} onChange={e=>setTeamBPlayers(e.target.value)} />
+
+      <div className="bg-gray-100 p-3 text-center">
+        <h2>{currentTeam === "A" ? teamAName||"Team A" : teamBName||"Team B"}</h2>
+        <p className="text-3xl">{active.score}</p>
+        <p>Wkts: {active.wickets}</p>
+        <p>Overs: {overs}</p>
+        <p>Pair {pairIndex+1}: {currentPair[0]} & {currentPair[1]}</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        {[0,1,2,3,4,6].map(r=> <button key={r} className="h-14 bg-blue-500 text-white" onClick={()=>addRuns(r)}>{r}</button>)}
+      </div>
+
+      <button onClick={wide} className="h-14 bg-yellow-500">Wide</button>
+      <button onClick={wicket} className="h-14 bg-red-600 text-white">Wicket</button>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={undo} className="h-12 bg-orange-500">Undo</button>
+        <button onClick={nextInnings} className="h-12 bg-green-600 text-white">Next Innings</button>
+      </div>
+
+      {inningsComplete && <div className="text-red-500 text-center">Innings Complete</div>}
+
+      <button onClick={exportMatch} className="h-12 bg-purple-600 text-white">Export Full Scorecard</button>
+
+      <div className="bg-white p-2">
+        <h3 className="font-bold">Ball History</h3>
+        {ballLog.map((b,i)=>(<div key={i} className="text-sm">{b}</div>))}
+      </div>
+
+      <div className="bg-white p-2">
+        <h3 className="font-bold">Pair Stats</h3>
+        {activePairs.map((pair,i)=>{
+          const s = statsArr[i]||{runs:0,wickets:0};
+          return <div key={i}>Pair {i+1}: {pair[0]} & {pair[1]} - {s.runs}/{s.wickets}</div>
+        })}
+      </div>
+    </div>
+  );
+}
